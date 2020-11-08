@@ -34,6 +34,31 @@ early_setup() {
 	grep -w "/dev" /proc/mounts >/dev/null || $MOUNT -t devtmpfs none /dev
 }
 
+find_device() {
+	_arg=${*}
+	_optarg=$(expr "x${_arg}" : 'x[^=]*=\(.*\)' || echo '')
+	_device=${_optarg}
+	case ${_arg} in
+		LABEL=*)
+			_device="$(basename "$(readlink /dev/disk/by-label/"${_optarg}")")"
+			echo "/dev/${_device}"
+			;;
+		PARTUUID=*)
+			_device="$(basename "$(readlink /dev/disk/by-partuuid/"${_optarg}")")"
+			echo "/dev/${_device}"
+			;;
+		UUID=*)
+			_device="$(basename "$(readlink /dev/disk/by-uuid/"${_optarg}")")"
+			echo "/dev/${_device}"
+			;;
+		*)
+			# Assume that the full device path was given if the arg
+			# does not match eny of the bove
+			echo "${_device}"
+			;;
+	esac
+}
+
 read_args() {
 	[ -z "${CMDLINE+x}" ] && CMDLINE=$(cat /proc/cmdline)
 	for arg in $CMDLINE; do
@@ -42,7 +67,7 @@ read_args() {
 		optarg=$(expr "x$arg" : 'x[^=]*=\(.*\)' || echo '')
 		case $arg in
 			root=*)
-				ROOT_RODEVICE=$optarg ;;
+				ROOT_RODEVICE=$(find_device "$optarg") ;;
 			rootfstype=*)
 				ROOT_ROFSTYPE="$optarg"
 				modprobe "$optarg" 2> /dev/null || \
@@ -52,7 +77,7 @@ read_args() {
 			rootoptions=*)
 				ROOT_ROMOUNTOPTIONS_DEVICE="$optarg" ;;
 			rootrw=*)
-				ROOT_RWDEVICE=$optarg ;;
+				ROOT_RWDEVICE=$(find_device "$optarg") ;;
 			rootrwfstype=*)
 				ROOT_RWFSTYPE="$optarg"
 				modprobe "$optarg" 2> /dev/null || \
