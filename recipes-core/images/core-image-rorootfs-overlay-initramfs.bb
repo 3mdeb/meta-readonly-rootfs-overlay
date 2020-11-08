@@ -8,7 +8,7 @@ PACKAGE_INSTALL = "initramfs-readonly-rootfs-overlay ${VIRTUAL-RUNTIME_base-util
 # Do not pollute the initrd image with rootfs features
 IMAGE_FEATURES = ""
 
-export IMAGE_BASENAME = "core-image-readonly-rootfs-overlay-initramfs"
+export IMAGE_BASENAME = "core-image-rorootfs-overlay-initramfs"
 IMAGE_LINGUAS = ""
 
 LICENSE = "MIT"
