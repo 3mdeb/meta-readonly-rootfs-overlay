@@ -53,7 +53,6 @@ rorootfs_find_device() {
 		# if it does not exists yet (device was not probed yet maybe)
 		# wait for it to appear only if the rootwait flag was set
 			if [ "$bootparam_rootwait" = "true" ]; then
-				echo "Waiting for device: $_device to appear..."
 				sleep 1
 		# if it was not set, exit from the loop right away and the
 		# next part of the process will fail as rooot device would not
