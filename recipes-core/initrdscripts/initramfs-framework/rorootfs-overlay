@@ -8,46 +8,73 @@ rorootfs_enabled() {
 }
 
 rorootfs_find_device() {
+	# Assume that the full device path was given if cannot match any of the
+	# below
 	_device=$1
+	_link=$_device
 
 	if [ "$(echo "${_device}" | cut -c1-5)" = "UUID=" ]; then
 		_uuid=$(echo "$_device" | cut -c6-)
-		_device=$(readlink -f "/dev/disk/by-uuid/$_uuid")
+		_link="/dev/disk/by-uuid/$_uuid"
 	fi
 
 	if [ "$(echo "${_device}" | cut -c1-9)" = "PARTUUID=" ]; then
 		_partuuid=$(echo "$_device" | cut -c10-)
-		_device=$(readlink -f "/dev/disk/by-partuuid/$_partuuid")
+		_link="/dev/disk/by-partuuid/$_partuuid"
 	fi
 
 	if [ "$(echo "${_device}" | cut -c1-10)" = "PARTLABEL=" ]; then
 		_partlabel=$(echo "$_device" | cut -c11-)
-		_device=$(readlink -f "/dev/disk/by-partlabel/$_partlabel")
+		_link="/dev/disk/by-partlabel/$_partlabel"
 	fi
 
 	if [ "$(echo "${_device}" | cut -c1-6)" = "LABEL=" ]; then
 		_label=$(echo "$_device" | cut -c7-)
-		_device=$(readlink -f "/dev/disk/by-label/$_label")
+		_link="/dev/disk/by-label/$_label"
 	fi
 
 	if [ "$(echo "${_device}" | cut -c1-3)" = "ID=" ]; then
 		_id=$(echo "$_device" | cut -c4-)
-		_device=$(readlink -f "/dev/disk/by-id/$_id")
+		_link="/dev/disk/by-id/$_id"
 	fi
 
 	if [ "$(echo "${_device}" | cut -c1-5)" = "PATH=" ]; then
 		_path=$(echo "$_device" | cut -c6-)
-		_device=$(readlink -f "/dev/disk/by-path/$_path")
+		_link="/dev/disk/by-path/$_path"
 	fi
 
-	# Assume that the full device path was given if cannot match any of the
-	# above
+	while : ; do
+		# if link exists at first, get the device name and exit from
+		# loop right away
+		if [ -e "$_link" ]; then
+			_device=$(readlink -f "$_link")
+			break
+		else
+		# if it does not exists yet (device was not probed yet maybe)
+		# wait for it to appear only if the rootwait flag was set
+			if [ "$bootparam_rootwait" = "true" ]; then
+				echo "Waiting for device: $_device to appear..."
+				sleep 1
+		# if it was not set, exit from the loop right away and the
+		# next part of the process will fail as rooot device would not
+		# be found
+			else
+				fatal "Device: $_device was not found"
+			fi
+		fi
+	done
+
 	echo "$_device"
 }
 
 rorootfs_run() {
 	if [ -z "$ROOTFS_DIR" ]; then
 		return
+	fi
+
+	# handle the rootdelay parameter from kernel commandline
+	if [ -n "$bootparam_rootdelay" ]; then
+		sleep "$bootparam_rootdelay"
 	fi
 
 	# default values
