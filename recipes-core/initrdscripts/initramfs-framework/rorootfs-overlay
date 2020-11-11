@@ -1,0 +1,189 @@
+#!/bin/sh
+# Copyright (C) 2020 3mdeb Embedded Systems Consulting
+# Licensed on MIT
+
+
+rorootfs_enabled() {
+	return 0
+}
+
+rorootfs_find_device() {
+	_device=$1
+
+	if [ "$(echo "${_device}" | cut -c1-5)" = "UUID=" ]; then
+		_uuid=$(echo "$_device" | cut -c6-)
+		_device=$(readlink -f "/dev/disk/by-uuid/$_uuid")
+	fi
+
+	if [ "$(echo "${_device}" | cut -c1-9)" = "PARTUUID=" ]; then
+		_partuuid=$(echo "$_device" | cut -c10-)
+		_device=$(readlink -f "/dev/disk/by-partuuid/$_partuuid")
+	fi
+
+	if [ "$(echo "${_device}" | cut -c1-10)" = "PARTLABEL=" ]; then
+		_partlabel=$(echo "$_device" | cut -c11-)
+		_device=$(readlink -f "/dev/disk/by-partlabel/$_partlabel")
+	fi
+
+	if [ "$(echo "${_device}" | cut -c1-6)" = "LABEL=" ]; then
+		_label=$(echo "$_device" | cut -c7-)
+		_device=$(readlink -f "/dev/disk/by-label/$_label")
+	fi
+
+	if [ "$(echo "${_device}" | cut -c1-3)" = "ID=" ]; then
+		_id=$(echo "$_device" | cut -c4-)
+		_device=$(readlink -f "/dev/disk/by-id/$_id")
+	fi
+
+	if [ "$(echo "${_device}" | cut -c1-5)" = "PATH=" ]; then
+		_path=$(echo "$_device" | cut -c6-)
+		_device=$(readlink -f "/dev/disk/by-path/$_path")
+	fi
+
+	# Assume that the full device path was given if cannot match any of the
+	# above
+	echo "$_device"
+}
+
+rorootfs_run() {
+	if [ -z "$ROOTFS_DIR" ]; then
+		return
+	fi
+
+	# default values
+	INIT="/sbin/init"
+	ROOT_ROINIT="/sbin/init"
+
+	ROOT_MOUNT=$ROOTFS_DIR
+	ROOT_RODEVICE=""
+	ROOT_RWDEVICE=""
+	ROOT_ROMOUNT="/media/rfs/ro"
+	ROOT_RWMOUNT="/media/rfs/rw"
+	ROOT_RWRESET="no"
+
+	ROOT_ROFSTYPE=""
+	ROOT_ROMOUNTOPTIONS="noatime,nodiratime"
+
+	ROOT_RWFSTYPE=""
+	ROOT_RWMOUNTOPTIONS="rw,noatime,mode=755"
+
+	# the default values can be overriden by the kernel params
+	[ -n "$bootparam_init" ] && INIT="$bootparam_init"
+	[ -n "$bootparam_rootinit" ] && ROOT_ROINIT="$bootparam_rootinit"
+	[ -n "$bootparam_rootrwreset" ] && ROOT_RWRESET="$bootparam_rootrwreset"
+
+	[ -n "$bootparam_root" ] && ROOT_RODEVICE="$(rorootfs_find_device "$bootparam_root")"
+	[ -n "$bootparam_rootrw" ] && ROOT_RWDEVICE="$(rorootfs_find_device "$bootparam_rootrw")"
+
+	[ -n "$bootparam_rootfstype" ] && ROOT_ROFSTYPE="$bootparam_rootfstype"
+	[ -n "$bootparam_rootoptions" ] && ROOT_ROMOUNTOPTIONS="$bootparam_rootoptions"
+
+	[ -n "$bootparam_rootrwfstype" ] && ROOT_RWFSTYPE="$bootparam_rootrwfstype"
+	[ -n "$bootparam_rootrwoptions" ] && ROOT_RWMOUNTOPTIONS="$bootparam_rootrwoptions"
+
+	mkdir -p "$ROOT_MOUNT" "$ROOT_ROMOUNT" "$ROOT_RWMOUNT"
+
+	# run fsck on ROOT_RODEVICE
+	fsck -p "$ROOT_RODEVICE" > /dev/null 2>&1
+	# run fsck on ROOT_RWDEVICE
+	fsck -p "$ROOT_RWDEVICE" > /dev/null 2>&1
+
+	# Build mount options for read only root file system.
+	if [ -n "$ROOT_RODEVICE" ]; then
+		ROOT_ROMOUNTPARAMS="-o $ROOT_ROMOUNTOPTIONS"
+		if [ -n "$ROOT_ROFSTYPE" ]; then
+			ROOT_ROMOUNTPARAMS="-t $ROOT_ROFSTYPE $ROOT_ROMOUNTPARAMS"
+		fi
+	else
+		fatal "No root device passed in kernel command line"
+	fi
+
+	# Mount root file system to new mount-point, if unsuccessful, try bind
+	# mounting current root file system.
+	if ! mount $ROOT_ROMOUNTPARAMS "$ROOT_RODEVICE" "$ROOT_ROMOUNT"; then
+		fatal "Could not mount read-only rootfs"
+	fi
+
+	# Remounting root file system as read only.
+	if ! mount -o remount,ro "$ROOT_ROMOUNT"; then
+		fatal "Could not remount read-only rootfs as read only"
+	fi
+
+	# If future init is the same as current file, use $ROOT_ROINIT
+	# Tries to avoid loop to infinity if init is set to current file via
+	# kernel command line
+	if cmp -s "$0" "$INIT"; then
+		INIT="$ROOT_ROINIT"
+	fi
+
+	# If a read-write device was specified via kernel command line, use
+	# it, otherwise default to tmpfs.
+	if [ -n "$ROOT_RWDEVICE" ]; then
+		ROOT_RWMOUNTPARAMS="-o $ROOT_RWMOUNTOPTIONS"
+		if [ -n "$ROOT_RWFSTYPE" ]; then
+			ROOT_RWMOUNTPARAMS="-t $ROOT_RWFSTYPE $ROOT_RWMOUNTPARAMS"
+		fi
+	else
+		msg "No rootrw device passed in kernel command line, using tmpfs"
+		ROOT_RWMOUNTPARAMS="-t tmpfs -o $ROOT_RWMOUNTOPTIONS"
+		ROOT_RWDEVICE="tmpfs"
+	fi
+
+	# Mount read-write file system into initram root file system
+	if ! mount $ROOT_RWMOUNTPARAMS "$ROOT_RWDEVICE" "$ROOT_RWMOUNT" ; then
+		fatal "Could not mount read-write rootfs"
+	fi
+
+	# Reset read-write file system if specified
+	if [ "yes" = "$ROOT_RWRESET" ] && [ -n "$ROOT_RWMOUNT" ]; then
+		if [ -n "$ROOT_RWMOUNT" ]; then
+			msg "rootrwreset was set to yes, resetting the overlay partition..."
+			rm -rf "${ROOT_RWMOUNT:?}/*"
+		else
+			fatal "ROOT_RWMOUNT was not set!"
+		fi
+	fi
+
+	# Determine which unification file system to use
+	union_fs_type=""
+	if grep -w "overlay" /proc/filesystems >/dev/null; then
+		union_fs_type="overlay"
+	elif grep -w "aufs" /proc/filesystems >/dev/null; then
+		union_fs_type="aufs"
+	else
+		union_fs_type=""
+	fi
+
+	# Create/Mount overlay root file system
+	case $union_fs_type in
+		"overlay")
+			msg "Mounting rw filesystem using overlay..."
+			mkdir -p $ROOT_RWMOUNT/upperdir $ROOT_RWMOUNT/work
+			mount -t overlay overlay \
+				-o "$(printf "%s%s%s" \
+					"lowerdir=$ROOT_ROMOUNT," \
+					"upperdir=$ROOT_RWMOUNT/upperdir," \
+					"workdir=$ROOT_RWMOUNT/work")" \
+				"$ROOT_MOUNT"
+			;;
+		"aufs")
+			msg "Mounting rw filesystem using aufs..."
+			mount -t aufs i\
+				-o "dirs=$ROOT_RWMOUNT=rw:$ROOT_ROMOUNT=ro" \
+				aufs "$ROOT_MOUNT"
+			;;
+		"")
+			fatal "No overlay filesystem type available"
+			;;
+	esac
+
+	# Move read-only and read-write root file system into the overlay
+	# file system
+	mkdir -p "$ROOT_MOUNT/$ROOT_ROMOUNT" "$ROOT_MOUNT/$ROOT_RWMOUNT"
+	mount -n --move "$ROOT_ROMOUNT" "$ROOT_MOUNT/$ROOT_ROMOUNT"
+	mount -n --move "$ROOT_RWMOUNT" "$ROOT_MOUNT/$ROOT_RWMOUNT"
+
+	# switch to the actual init in the overlay root file system
+	exec switch_root "$ROOT_MOUNT" "$INIT" ||
+		fatal "Failed to switch_root!"
+}
