@@ -174,7 +174,7 @@ rorootfs_run() {
 	if [ "yes" = "$ROOT_RWRESET" ] && [ -n "$ROOT_RWMOUNT" ]; then
 		if [ -n "$ROOT_RWMOUNT" ]; then
 			msg "rootrwreset was set to yes, resetting the overlay partition..."
-			rm -rf "${ROOT_RWMOUNT:?}/*"
+			rm -rf ${ROOT_RWMOUNT}/*
 		else
 			fatal "ROOT_RWMOUNT was not set!"
 		fi
