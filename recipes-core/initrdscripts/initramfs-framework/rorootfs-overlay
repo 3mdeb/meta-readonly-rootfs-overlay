@@ -157,7 +157,17 @@ rorootfs_run() {
 
 	# Mount read-write file system into initram root file system
 	if ! mount $ROOT_RWMOUNTPARAMS "$ROOT_RWDEVICE" "$ROOT_RWMOUNT" ; then
-		fatal "Could not mount read-write rootfs"
+		# if it fails for some reason, try to recover with forcing fsck
+		fsck -f "$ROOT_RWDEVICE" > /dev/null 2>&1
+		if ! mount $ROOT_RWMOUNTPARAMS "$ROOT_RWDEVICE" "$ROOT_RWMOUNT" ; then
+			# if it fails again, try to recover by creating a new
+			# filesystem
+			mkfs.ext4 "$ROOT_RWDEVICE"
+			if ! mount $ROOT_RWMOUNTPARAMS "$ROOT_RWDEVICE" "$ROOT_RWMOUNT" ; then
+				# if it still fails, give up
+				fatal "Could not mount read-write rootfs"
+			fi
+		fi
 	fi
 
 	# Reset read-write file system if specified
