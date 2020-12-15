@@ -33,4 +33,5 @@ IMAGE_ROOTFS_SIZE = "8192"
 IMAGE_ROOTFS_EXTRA_SPACE = "0"
 
 BAD_RECOMMENDATIONS += "busybox-syslog"
+# we provide a custom rorootfs-overlay module to load rootfs
 BAD_RECOMMENDATIONS += "initramfs-module-rootfs"
