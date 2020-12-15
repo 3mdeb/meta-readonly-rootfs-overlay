@@ -164,7 +164,7 @@ rorootfs_run() {
 		if ! mount $ROOT_RWMOUNTPARAMS "$ROOT_RWDEVICE" "$ROOT_RWMOUNT" ; then
 			# if it fails again, try to recover by creating a new
 			# filesystem
-			mkfs.ext4 "$ROOT_RWDEVICE"
+			yes | mkfs.ext4 -L "rwoverlay" "$ROOT_RWDEVICE"
 			if ! mount $ROOT_RWMOUNTPARAMS "$ROOT_RWDEVICE" "$ROOT_RWMOUNT" ; then
 				# if it still fails, give up
 				fatal "Could not mount read-write rootfs"
