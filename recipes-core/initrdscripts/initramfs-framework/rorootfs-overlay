@@ -112,9 +112,9 @@ rorootfs_run() {
 	mkdir -p "$ROOT_MOUNT" "$ROOT_ROMOUNT" "$ROOT_RWMOUNT"
 
 	# run fsck on ROOT_RODEVICE
-	fsck -p "$ROOT_RODEVICE" > /dev/null 2>&1
+	e2fsck -p "$ROOT_RODEVICE" > /dev/null 2>&1
 	# run fsck on ROOT_RWDEVICE
-	fsck -p "$ROOT_RWDEVICE" > /dev/null 2>&1
+	e2fsck -p "$ROOT_RWDEVICE" > /dev/null 2>&1
 
 	# Build mount options for read only root file system.
 	if [ -n "$ROOT_RODEVICE" ]; then
@@ -160,7 +160,7 @@ rorootfs_run() {
 	# Mount read-write file system into initram root file system
 	if ! mount $ROOT_RWMOUNTPARAMS "$ROOT_RWDEVICE" "$ROOT_RWMOUNT" ; then
 		# if it fails for some reason, try to recover with forcing fsck
-		fsck -f "$ROOT_RWDEVICE" > /dev/null 2>&1
+		e2fsck -fp "$ROOT_RWDEVICE" > /dev/null 2>&1
 		if ! mount $ROOT_RWMOUNTPARAMS "$ROOT_RWDEVICE" "$ROOT_RWMOUNT" ; then
 			# if it fails again, try to recover by creating a new
 			# filesystem
