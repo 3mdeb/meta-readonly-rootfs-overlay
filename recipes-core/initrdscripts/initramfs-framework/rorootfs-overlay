@@ -83,11 +83,15 @@ rorootfs_run() {
 	ROOT_ROINIT="/sbin/init"
 
 	ROOT_MOUNT=$ROOTFS_DIR
+	ROOT_MOUNT2="/rootfs2"
 	ROOT_RODEVICE=""
 	ROOT_RWDEVICE=""
+	ROOT_RWDEVICE2=""
 	ROOT_ROMOUNT="/media/rfs/ro"
 	ROOT_RWMOUNT="/media/rfs/rw"
+	ROOT_RWMOUNT2="/media/rfs/rw2"
 	ROOT_RWRESET="no"
+	ROOT_RWRESET2="no"
 
 	ROOT_ROFSTYPE=""
 	ROOT_ROMOUNTOPTIONS="noatime,nodiratime"
@@ -95,13 +99,18 @@ rorootfs_run() {
 	ROOT_RWFSTYPE=""
 	ROOT_RWMOUNTOPTIONS="rw,noatime,mode=755"
 
+	# By default, only one level of overlay is used
+	USE_RWOVERLAY2="no"
+
 	# the default values can be overriden by the kernel params
 	[ -n "$bootparam_init" ] && INIT="$bootparam_init"
 	[ -n "$bootparam_rootinit" ] && ROOT_ROINIT="$bootparam_rootinit"
 	[ -n "$bootparam_rootrwreset" ] && ROOT_RWRESET="$bootparam_rootrwreset"
+	[ -n "$bootparam_rootrwreset" ] && ROOT_RWRESET2="$bootparam_rootrwreset2"
 
 	[ -n "$bootparam_root" ] && ROOT_RODEVICE="$(rorootfs_find_device "$bootparam_root")"
 	[ -n "$bootparam_rootrw" ] && ROOT_RWDEVICE="$(rorootfs_find_device "$bootparam_rootrw")"
+	[ -n "$bootparam_rootrw" ] && ROOT_RWDEVICE2="$(rorootfs_find_device "$bootparam_rootrw2")"
 
 	[ -n "$bootparam_rootfstype" ] && ROOT_ROFSTYPE="$bootparam_rootfstype"
 	[ -n "$bootparam_rootoptions" ] && ROOT_ROMOUNTOPTIONS="$bootparam_rootoptions"
@@ -109,12 +118,30 @@ rorootfs_run() {
 	[ -n "$bootparam_rootrwfstype" ] && ROOT_RWFSTYPE="$bootparam_rootrwfstype"
 	[ -n "$bootparam_rootrwoptions" ] && ROOT_RWMOUNTOPTIONS="$bootparam_rootrwoptions"
 
+	[ -n "$bootparam_rootrwfstype" ] && ROOT_RWFSTYPE2="$bootparam_rootrwfstype2"
+	[ -n "$bootparam_rootrwoptions" ] && ROOT_RWMOUNTOPTIONS2="$bootparam_rootrwoptions2"
+
+	# We use 2nd level of overlay if rootrw2 was given in the kernel cmdline
+	# AND rwoverlaylvl was set to 2
+	if [ 2 -eq $bootparam_rwoverlaylvl ]; then
+		if [ -n "$bootparam_rootrw2" ]; then
+			USE_RWOVERLAY2="yes"
+		fi
+	fi
+
 	mkdir -p "$ROOT_MOUNT" "$ROOT_ROMOUNT" "$ROOT_RWMOUNT"
+	if [ "yes" = "$USE_RWOVERLAY2" ]; then
+		mkdir -p "$ROOT_MOUNT2" "$ROOT_RWMOUNT2"
+	fi
 
 	# run fsck on ROOT_RODEVICE
 	e2fsck -p "$ROOT_RODEVICE" > /dev/null 2>&1
 	# run fsck on ROOT_RWDEVICE
 	e2fsck -p "$ROOT_RWDEVICE" > /dev/null 2>&1
+	# run fsck on ROOT_RWDEVICE2 if in use
+	if [ "yes" = "$USE_RWOVERLAY2" ]; then
+		e2fsck -p "$ROOT_RWDEVICE2" > /dev/null 2>&1
+	fi
 
 	# Build mount options for read only root file system.
 	if [ -n "$ROOT_RODEVICE" ]; then
@@ -157,6 +184,14 @@ rorootfs_run() {
 		ROOT_RWDEVICE="tmpfs"
 	fi
 
+	# set mount params for 2nd level of overlay
+	if [ "yes" = "$USE_RWOVERLAY2" ]; then
+		ROOT_RWMOUNTPARAMS2="-o $ROOT_RWMOUNTOPTIONS2"
+		if [ -n "$ROOT_RWFSTYPE2" ]; then
+			ROOT_RWMOUNTPARAMS2="-t $ROOT_RWFSTYPE2 $ROOT_RWMOUNTPARAMS2"
+		fi
+	fi
+
 	# Mount read-write file system into initram root file system
 	if ! mount $ROOT_RWMOUNTPARAMS "$ROOT_RWDEVICE" "$ROOT_RWMOUNT" ; then
 		# if it fails for some reason, try to recover with forcing fsck
@@ -172,6 +207,23 @@ rorootfs_run() {
 		fi
 	fi
 
+	if [ "yes" = "$USE_RWOVERLAY2" ]; then
+		# Mount 2nd level read-write file system into initram root file system
+		if ! mount $ROOT_RWMOUNTPARAMS2 "$ROOT_RWDEVICE2" "$ROOT_RWMOUNT2" ; then
+			# if it fails for some reason, try to recover with forcing fsck
+			e2fsck -fp "$ROOT_RWDEVICE2" > /dev/null 2>&1
+			if ! mount $ROOT_RWMOUNTPARAMS2 "$ROOT_RWDEVICE2" "$ROOT_RWMOUNT2" ; then
+				# if it fails again, try to recover by creating a new
+				# filesystem
+				yes | mkfs.ext4 -L "rwoverlay" "$ROOT_RWDEVICE2"
+				if ! mount $ROOT_RWMOUNTPARAMS2 "$ROOT_RWDEVICE2" "$ROOT_RWMOUNT2" ; then
+					# if it still fails, give up
+					fatal "Could not mount read-write rootfs"
+				fi
+			fi
+		fi
+	fi
+
 	# Reset read-write file system if specified
 	if [ "yes" = "$ROOT_RWRESET" ] && [ -n "$ROOT_RWMOUNT" ]; then
 		if [ -n "$ROOT_RWMOUNT" ]; then
@@ -179,6 +231,16 @@ rorootfs_run() {
 			rm -rf ${ROOT_RWMOUNT}/*
 		else
 			fatal "ROOT_RWMOUNT was not set!"
+		fi
+	fi
+
+	# Reset 2nd level read-write file system if specified
+	if [ "yes" = "$ROOT_RWRESET2" ] && [ -n "$ROOT_RWMOUNT2" ]; then
+		if [ -n "$ROOT_RWMOUNT2" ]; then
+			msg "rootrwreset2 was set to yes, resetting the 2nd level overlay partition..."
+			rm -rf ${ROOT_RWMOUNT2}/*
+		else
+			fatal "ROOT_RWMOUNT2 was not set!"
 		fi
 	fi
 
@@ -203,25 +265,54 @@ rorootfs_run() {
 					"upperdir=$ROOT_RWMOUNT/upperdir," \
 					"workdir=$ROOT_RWMOUNT/work")" \
 				"$ROOT_MOUNT"
+
+			if [ "yes" = "$USE_RWOVERLAY2" ]; then
+				msg "Mounting 2nd level rw filesystem using overlay..."
+				mkdir -p $ROOT_RWMOUNT2/upperdir $ROOT_RWMOUNT2/work
+				mount -t overlay overlay \
+					-o "$(printf "%s%s%s" \
+						"lowerdir=$ROOT_MOUNT," \
+						"upperdir=$ROOT_RWMOUNT2/upperdir," \
+						"workdir=$ROOT_RWMOUNT2/work")" \
+					"$ROOT_MOUNT2"
+			fi
 			;;
 		"aufs")
 			msg "Mounting rw filesystem using aufs..."
 			mount -t aufs i\
 				-o "dirs=$ROOT_RWMOUNT=rw:$ROOT_ROMOUNT=ro" \
 				aufs "$ROOT_MOUNT"
+
+			if [ "yes" = "$USE_RWOVERLAY2" ]; then
+				msg "2nd level rw filesystem for aufs is not yet supported"
+			fi
 			;;
 		"")
 			fatal "No overlay filesystem type available"
 			;;
 	esac
 
-	# Move read-only and read-write root file system into the overlay
+	# Move read-only and read-write root file system(s) into the overlay
 	# file system
-	mkdir -p "$ROOT_MOUNT/$ROOT_ROMOUNT" "$ROOT_MOUNT/$ROOT_RWMOUNT"
-	mount -n --move "$ROOT_ROMOUNT" "$ROOT_MOUNT/$ROOT_ROMOUNT"
-	mount -n --move "$ROOT_RWMOUNT" "$ROOT_MOUNT/$ROOT_RWMOUNT"
+	if [ "yes" = "$USE_RWOVERLAY2" ]; then
+		OV1_MERGE_MOUNT="media/rfs/ov1"
+		mkdir -p "$ROOT_MOUNT2/$ROOT_ROMOUNT" "$ROOT_MOUNT2/$ROOT_RWMOUNT" "$ROOT_MOUNT2/$ROOT_RWMOUNT2" "$ROOT_MOUNT2/$OV1_MERGE_MOUNT"
+		mount -n --move "$ROOT_ROMOUNT" "$ROOT_MOUNT2/$ROOT_ROMOUNT"
+		mount -n --move "$ROOT_RWMOUNT" "$ROOT_MOUNT2/$ROOT_RWMOUNT"
+		mount -n --move "$ROOT_MOUNT" "$ROOT_MOUNT2/$OV1_MERGE_MOUNT"
+		mount -n --move "$ROOT_RWMOUNT2" "$ROOT_MOUNT2/$ROOT_RWMOUNT2"
+	else
+		mkdir -p "$ROOT_MOUNT/$ROOT_ROMOUNT" "$ROOT_MOUNT/$ROOT_RWMOUNT"
+		mount -n --move "$ROOT_ROMOUNT" "$ROOT_MOUNT/$ROOT_ROMOUNT"
+		mount -n --move "$ROOT_RWMOUNT" "$ROOT_MOUNT/$ROOT_RWMOUNT"
+	fi
 
 	# switch to the actual init in the overlay root file system
-	exec switch_root "$ROOT_MOUNT" "$INIT" ||
-		fatal "Failed to switch_root!"
+	if [ "yes" = "$USE_RWOVERLAY2" ]; then
+		exec switch_root "$ROOT_MOUNT2" "$INIT" ||
+			fatal "Failed to switch_root to $ROOT_MOUNT2!"
+	else
+		exec switch_root "$ROOT_MOUNT" "$INIT" ||
+			fatal "Failed to switch_root to $ROOT_MOUNT!"
+	fi
 }
