@@ -92,6 +92,8 @@ rorootfs_run() {
 	ROOT_RWMOUNT2="/media/rfs/rw2"
 	ROOT_RWRESET="no"
 	ROOT_RWRESET2="no"
+	FACTORY_RESET="no"
+	FACTORY_RESET_CMD="/usr/sbin/factory-reset"
 
 	ROOT_ROFSTYPE=""
 	ROOT_ROMOUNTOPTIONS="noatime,nodiratime"
@@ -107,6 +109,7 @@ rorootfs_run() {
 	[ -n "$bootparam_rootinit" ] && ROOT_ROINIT="$bootparam_rootinit"
 	[ -n "$bootparam_rootrwreset" ] && ROOT_RWRESET="$bootparam_rootrwreset"
 	[ -n "$bootparam_rootrwreset" ] && ROOT_RWRESET2="$bootparam_rootrwreset2"
+	[ -n "$bootparam_rootrwreset" ] && FACTORY_RESET="$bootparam_factoryreset"
 
 	[ -n "$bootparam_root" ] && ROOT_RODEVICE="$(rorootfs_find_device "$bootparam_root")"
 	[ -n "$bootparam_rootrw" ] && ROOT_RWDEVICE="$(rorootfs_find_device "$bootparam_rootrw")"
@@ -242,6 +245,12 @@ rorootfs_run() {
 		else
 			fatal "ROOT_RWMOUNT2 was not set!"
 		fi
+	fi
+
+	# Project-specific factory reset action
+	if [ "yes" = "$FACTORY_RESET" ]; then
+		msg "factoryreset was set to yes, performing factory reset..."
+		${FACTORY_RESET_CMD}
 	fi
 
 	# Determine which unification file system to use
