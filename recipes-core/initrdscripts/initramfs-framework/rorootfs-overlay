@@ -266,6 +266,7 @@ rorootfs_run() {
 	case $union_fs_type in
 		"overlay")
 			msg "Mounting rw filesystem using overlay..."
+			mkdir -p $ROOT_RWMOUNT/upperdir $ROOT_RWMOUNT/work
 			if [ "yes" = "$USE_RWOVERLAY2" ]; then
 				msg "Mounting 2nd level rw filesystem using overlay..."
 				mkdir -p $ROOT_RWMOUNT2/upperdir $ROOT_RWMOUNT2/work
@@ -276,7 +277,6 @@ rorootfs_run() {
 						"workdir=$ROOT_RWMOUNT2/work")" \
 					"$ROOT_MOUNT"
 			else
-				mkdir -p $ROOT_RWMOUNT/upperdir $ROOT_RWMOUNT/work
 				mount -t overlay overlay \
 					-o "$(printf "%s%s%s" \
 						"lowerdir=$ROOT_ROMOUNT," \
