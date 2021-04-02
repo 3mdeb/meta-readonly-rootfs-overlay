@@ -83,7 +83,6 @@ rorootfs_run() {
 	ROOT_ROINIT="/sbin/init"
 
 	ROOT_MOUNT=$ROOTFS_DIR
-	ROOT_MOUNT2="/rootfs2"
 	ROOT_RODEVICE=""
 	ROOT_RWDEVICE=""
 	ROOT_RWDEVICE2=""
@@ -134,7 +133,7 @@ rorootfs_run() {
 
 	mkdir -p "$ROOT_MOUNT" "$ROOT_ROMOUNT" "$ROOT_RWMOUNT"
 	if [ "yes" = "$USE_RWOVERLAY2" ]; then
-		mkdir -p "$ROOT_MOUNT2" "$ROOT_RWMOUNT2"
+		mkdir -p "$ROOT_RWMOUNT2"
 	fi
 
 	# run fsck on ROOT_RODEVICE
@@ -267,23 +266,23 @@ rorootfs_run() {
 	case $union_fs_type in
 		"overlay")
 			msg "Mounting rw filesystem using overlay..."
-			mkdir -p $ROOT_RWMOUNT/upperdir $ROOT_RWMOUNT/work
-			mount -t overlay overlay \
-				-o "$(printf "%s%s%s" \
-					"lowerdir=$ROOT_ROMOUNT," \
-					"upperdir=$ROOT_RWMOUNT/upperdir," \
-					"workdir=$ROOT_RWMOUNT/work")" \
-				"$ROOT_MOUNT"
-
 			if [ "yes" = "$USE_RWOVERLAY2" ]; then
 				msg "Mounting 2nd level rw filesystem using overlay..."
 				mkdir -p $ROOT_RWMOUNT2/upperdir $ROOT_RWMOUNT2/work
 				mount -t overlay overlay \
 					-o "$(printf "%s%s%s" \
-						"lowerdir=$ROOT_MOUNT," \
+						"lowerdir=$ROOT_RWMOUNT:$ROOT_ROMOUNT," \
 						"upperdir=$ROOT_RWMOUNT2/upperdir," \
 						"workdir=$ROOT_RWMOUNT2/work")" \
-					"$ROOT_MOUNT2"
+					"$ROOT_MOUNT"
+			else
+				mkdir -p $ROOT_RWMOUNT/upperdir $ROOT_RWMOUNT/work
+				mount -t overlay overlay \
+					-o "$(printf "%s%s%s" \
+						"lowerdir=$ROOT_ROMOUNT," \
+						"upperdir=$ROOT_RWMOUNT/upperdir," \
+						"workdir=$ROOT_RWMOUNT/work")" \
+					"$ROOT_MOUNT"
 			fi
 			;;
 		"aufs")
@@ -303,25 +302,16 @@ rorootfs_run() {
 
 	# Move read-only and read-write root file system(s) into the overlay
 	# file system
+	mkdir -p "$ROOT_MOUNT/$ROOT_ROMOUNT" "$ROOT_MOUNT/$ROOT_RWMOUNT"
+	mount -n --move "$ROOT_ROMOUNT" "$ROOT_MOUNT/$ROOT_ROMOUNT"
+	mount -n --move "$ROOT_RWMOUNT" "$ROOT_MOUNT/$ROOT_RWMOUNT"
+
 	if [ "yes" = "$USE_RWOVERLAY2" ]; then
-		OV1_MERGE_MOUNT="media/rfs/ov1"
-		mkdir -p "$ROOT_MOUNT2/$ROOT_ROMOUNT" "$ROOT_MOUNT2/$ROOT_RWMOUNT" "$ROOT_MOUNT2/$ROOT_RWMOUNT2" "$ROOT_MOUNT2/$OV1_MERGE_MOUNT"
-		mount -n --move "$ROOT_ROMOUNT" "$ROOT_MOUNT2/$ROOT_ROMOUNT"
-		mount -n --move "$ROOT_RWMOUNT" "$ROOT_MOUNT2/$ROOT_RWMOUNT"
-		mount -n --move "$ROOT_MOUNT" "$ROOT_MOUNT2/$OV1_MERGE_MOUNT"
-		mount -n --move "$ROOT_RWMOUNT2" "$ROOT_MOUNT2/$ROOT_RWMOUNT2"
-	else
-		mkdir -p "$ROOT_MOUNT/$ROOT_ROMOUNT" "$ROOT_MOUNT/$ROOT_RWMOUNT"
-		mount -n --move "$ROOT_ROMOUNT" "$ROOT_MOUNT/$ROOT_ROMOUNT"
-		mount -n --move "$ROOT_RWMOUNT" "$ROOT_MOUNT/$ROOT_RWMOUNT"
+		mkdir -p "$ROOT_MOUNT/$ROOT_RWMOUNT2"
+		mount -n --move "$ROOT_RWMOUNT2" "$ROOT_MOUNT/$ROOT_RWMOUNT2"
 	fi
 
 	# switch to the actual init in the overlay root file system
-	if [ "yes" = "$USE_RWOVERLAY2" ]; then
-		exec switch_root "$ROOT_MOUNT2" "$INIT" ||
-			fatal "Failed to switch_root to $ROOT_MOUNT2!"
-	else
-		exec switch_root "$ROOT_MOUNT" "$INIT" ||
-			fatal "Failed to switch_root to $ROOT_MOUNT!"
-	fi
+	exec switch_root "$ROOT_MOUNT" "$INIT" ||
+		fatal "Failed to switch_root to $ROOT_MOUNT!"
 }
