@@ -271,7 +271,7 @@ rorootfs_run() {
 				mkdir -p $ROOT_RWMOUNT2/upperdir $ROOT_RWMOUNT2/work
 				mount -t overlay overlay \
 					-o "$(printf "%s%s%s" \
-						"lowerdir=$ROOT_RWMOUNT:$ROOT_ROMOUNT," \
+						"lowerdir=$ROOT_RWMOUNT/upperdir:$ROOT_ROMOUNT," \
 						"upperdir=$ROOT_RWMOUNT2/upperdir," \
 						"workdir=$ROOT_RWMOUNT2/work")" \
 					"$ROOT_MOUNT"
