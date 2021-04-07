@@ -276,6 +276,7 @@ rorootfs_run() {
 						"upperdir=$ROOT_RWMOUNT2/upperdir," \
 						"workdir=$ROOT_RWMOUNT2/work")" \
 					"$ROOT_MOUNT"
+				mount -o remount,ro "$ROOT_RWMOUNT"
 			else
 				mount -t overlay overlay \
 					-o "$(printf "%s%s%s" \
