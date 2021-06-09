@@ -1,1 +1,5 @@
-KERNEL_FEATURES_append = " features/overlayfs/overlayfs.scc"
+FILESEXTRAPATHS_prepend := "${THISDIR}/files:"
+SRC_URI_append = " \
+	file://overlayfs.cfg \
+"
+
