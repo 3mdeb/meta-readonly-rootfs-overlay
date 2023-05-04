@@ -1,0 +1,12 @@
+#!/bin/sh
+#
+# SPDX-FileCopyrightText: 2021 3mdeb Embedded Systems Consulting <contact@3mdeb.com>
+#
+# SPDX-License-Identifier: MIT
+
+# TODO: do not hardcode that here?
+# it is also set in the rootfs-overlay script - definition in one place would be
+# better
+ROOT_RWMOUNT="/media/rfs/rw"
+
+rm -rf ${ROOT_RWMOUNT}/*
