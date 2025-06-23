@@ -93,7 +93,7 @@ rorootfs_run() {
 	ROOT_ROMOUNTOPTIONS="noatime,nodiratime"
 
 	ROOT_RWFSTYPE=""
-	ROOT_RWMOUNTOPTIONS="rw,noatime,mode=755"
+	ROOT_RWMOUNTOPTIONS="rw,noatime"
 
 	# the default values can be overriden by the kernel params
 	[ -n "$bootparam_init" ] && INIT="$bootparam_init"
